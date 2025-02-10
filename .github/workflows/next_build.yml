@@ -1,0 +1,61 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (main branch)
+        uses: actions/checkout@v3
+        with:
+          ref: main         # Explicitly checking out the main branch
+          fetch-depth: 0    # Fetch full history to allow merging
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies for NextJS
+        working-directory: client
+        run: npm install
+
+      - name: Build NextJS app
+        working-directory: client
+        run: npm run build
+
+      - name: Set global Git identity
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Stash local changes before pulling
+        run: git stash
+
+      - name: Pull latest changes before pushing
+        run: |
+          git remote set-url origin https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git pull origin main --rebase
+
+      - name: Apply stashed changes
+        run: |
+          git stash pop || echo "No stash entries found."
+
+      - name: Commit and push build changes (build artifacts only)
+        if: ${{ success() }}
+        run: |
+          if [ -d client/.next ]; then
+            git add client/.next --force
+          else
+            echo "client/.next directory does not exist, skipping git add."
+          fi
+          git commit -m "production build shipped" || echo "No changes to commit"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
